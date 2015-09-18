@@ -167,6 +167,7 @@ void btree::_split_node(b_node* node) {
 	return;
 }
 
+// 重连节点
 void btree::_link_node(b_node* parent, int pos, b_node* left_child, b_node* right_child) {
 	parent->childs[pos] = left_child;
 	left_child->parent = parent;
