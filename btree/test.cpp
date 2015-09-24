@@ -30,12 +30,12 @@ int main() {
 
 	//============================================================
 	btr.del(23);
+	btr.print();
 	btr.del(22);
 	btr.print();
 
 	btr.del(40);
 	btr.print();
-
 
 	btr.del(35);
 	btr.print();

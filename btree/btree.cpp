@@ -12,8 +12,8 @@ pos btree::_query(b_node* node, int key) {
 	{
 		return p;
 	}
-	int index = 0;
 
+	int index = 0;				// 在节点中的索引
 	while (index < node->num && node->keys[index] < key)
 	{
 		++index;
@@ -122,7 +122,10 @@ void btree::_split_node(b_node* node) {
 		}
 	}
 	split_left_node->childs[i] = node->childs[j];
-	if (split_left_node->childs[i]) split_left_node->childs[i]->pos_in_parent = i;
+	if (split_left_node->childs[i]) {
+		split_left_node->childs[i]->parent = split_left_node;
+		split_left_node->childs[i]->pos_in_parent = i;
+	}
 	split_left_node->num = split_pos;
 
 	// 处理右儿子节点
@@ -136,7 +139,10 @@ void btree::_split_node(b_node* node) {
 		}
 	}
 	split_right_node->childs[i] = node->childs[j];
-	if (split_right_node->childs[i]) split_right_node->childs[i]->pos_in_parent = i;
+	if (split_right_node->childs[i]) {
+		split_right_node->childs[i]->parent = split_right_node;
+		split_right_node->childs[i]->pos_in_parent = i;
+	}
 	split_right_node->num = dim - split_pos;
 
 	// 将分割的节点上升到父节点中
@@ -225,60 +231,63 @@ void btree::_merge_node(b_node* del_node) {
 		return;
 	}
 
+	int p_key_pos = (del_node->pos_in_parent + ngb_node->pos_in_parent) / 2;
+	int parent_key = del_node->parent->keys[p_key_pos];
+
 	// 处理组合后的节点
-	b_node* combined_node = new b_node(dim);
-	int combined_n = 0;
-	int i = 0;
-	for (i=0; i<del_node->num+1; ++i, ++combined_n)
+	b_node* combined_node = new b_node(del_node->num + 1 + ngb_node->num);
+
+	if (del_node->pos_in_parent < ngb_node->pos_in_parent)
 	{
-		combined_node->keys[combined_n] = del_node->keys[i];
-		combined_node->childs[combined_n] = del_node->childs[i];
+		int combined_n = 0;
+		_realloc(combined_node, del_node, del_node->num);
+		combined_n += del_node->num;
 
-		if (combined_node->childs[i]) {
-			combined_node->childs[i]->parent = del_node;
-			combined_node->childs[i]->pos_in_parent = combined_n;
-		}
+		combined_node->insert(parent_key); ++combined_n;
+
+		_realloc(combined_node, ngb_node, ngb_node->num, combined_n);
 	}
-	combined_node->num += del_node->num;
-
-	int parent_key = del_node->parent->keys[del_node->pos_in_parent];
-	combined_node->insert(parent_key); ++combined_n;
-	for (int i=0; i<ngb_node->num+1; ++i, ++combined_n)
+	else
 	{
-		combined_node->keys[combined_n] = ngb_node->keys[i];
-		combined_node->childs[combined_n] = ngb_node->childs[i];
+		int combined_n = 0;
+		_realloc(combined_node, ngb_node, ngb_node->num);
+		combined_n += ngb_node->num;
 
-		if (combined_node->childs[i]) {
-			combined_node->childs[i]->parent = combined_node;
-			combined_node->childs[i]->pos_in_parent = combined_n;
-		}
+		combined_node->insert(parent_key); ++combined_n;
+
+		_realloc(combined_node, del_node, del_node->num, combined_n);
 	}
-	combined_node->num += ngb_node->num;
+
 
 	// 如果邻居key的数量大于(M-1)/2, 那么执行case1逻辑，将combined后的node中间值和parent中的值进行交换，然后分裂成2个节点
 	if (ngb_node->num > dim/2)
 	{
-		int split_pos = (del_node->num + ngb_node->num + 1)/2;
+		int split_pos = (del_node->num + ngb_node->num + 1) / 2;
+		b_node* combined_left = new b_node(dim);
+		b_node* combined_right = new b_node(dim);
 
-		del_node->insert(del_node->parent->keys[del_node->pos_in_parent]);
-		int i = 0;
-		int j = 0;
-		for (i=del_node->num+1; i<split_pos; ++i, ++j)
-		{
-			del_node->insert(ngb_node->keys[j]);
-			ngb_node->del(ngb_node->keys[j]);
-		}
+		_realloc(combined_left, combined_node, split_pos);
+		_realloc(combined_right, combined_node, combined_node->num - split_pos - 1, 0, split_pos + 1);
 
-		std::swap(del_node->parent->keys[del_node->pos_in_parent], ngb_node->keys[j]);
-		ngb_node->del(ngb_node->keys[j]);
+		combined_left->parent = del_node->parent;
+		combined_right->parent = del_node->parent;
+
+		b_node* parent = del_node->parent;
+		std::swap(combined_node->keys[split_pos], del_node->parent->keys[del_node->pos_in_parent]);
+		parent->childs[p_key_pos] = combined_left;
+		combined_left->pos_in_parent = p_key_pos;
+		parent->childs[p_key_pos + 1] = combined_right;
+		combined_right->pos_in_parent = p_key_pos + 1;
+		
 		return;
 	}
 
 	// 如果邻居的key的数量刚好是(M-1)/2，那么合并之后就可能会发生underflowed情况
 	// 邻居key的数量不可能会发生小于(M-1)/2的，因为如果是这样，之前就已经做过fix处理了
-	del_node->parent->childs[del_node->pos_in_parent] = combined_node;
 	del_node->parent->del(parent_key);
+	del_node->parent->childs[del_node->pos_in_parent] = combined_node;
 	combined_node->parent = del_node->parent;
+	combined_node->pos_in_parent = del_node->pos_in_parent;
 
 	// 如果parent去掉一个节点之后并没有underflowed，那么就结束
 	if (!del_node->parent->is_underflowed())
@@ -288,6 +297,28 @@ void btree::_merge_node(b_node* del_node) {
 
 	// 否则继续对parent节点进行修复, 直到根节点
 	_merge_node(del_node->parent);
+	return;
+}
+
+void btree::_realloc(b_node* new_node, b_node* old_node, int num, int new_offset, int old_offset) {
+	int i = old_offset;
+	int n = new_offset;
+	for (; i<old_offset + num; ++i, ++n)
+	{
+		new_node->keys[n] = old_node->keys[i];
+		new_node->childs[n] = old_node->childs[i];
+
+		if (new_node->childs[n]) {
+			new_node->childs[n]->parent = new_node;
+			new_node->childs[n]->pos_in_parent = n;
+		}
+	}
+	new_node->childs[n] = old_node->childs[i];
+	if (new_node->childs[n]) {
+		new_node->childs[n]->parent = new_node;
+		new_node->childs[n]->pos_in_parent = n;
+	}
+	new_node->num += num;
 	return;
 }
 

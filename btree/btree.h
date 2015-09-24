@@ -117,6 +117,17 @@ struct b_node {
 		return i;
 	}
 
+	int get_pos(int key) {
+		for (int i=0; i<num; ++i)
+		{
+			if (key == keys[i])
+			{
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	// 获取key数量较多的邻居
 	b_node* get_pop_ngb() {
 		if (!parent)						// 是根节点
@@ -173,6 +184,7 @@ private:
 	void _split_node(b_node* node);
 	void _link_node(b_node* parent, int pos, b_node* left_child, b_node* right_child);
 	void _merge_node(b_node* node);
+	void _realloc(b_node* new_node, b_node* old_node, int num, int new_offset=0, int old_offset=0);
 
 private:
 	int dim;					// 维度
